@@ -1,8 +1,11 @@
 -module(teleport).
 
--export([send/3]).
+-export([send/3, start/0]).
 
 -export([name_for_node/1]).
+
+start() ->
+  application:ensure_all_started(teleport).
 
 send(Dest, Node, Message) ->
   case node_addressable(Node) of
@@ -10,11 +13,11 @@ send(Dest, Node, Message) ->
       {error, nodedown};
     _ ->
       Name = name_for_node(Node),
-      do_send(Node, Name, Dest, whereis(Name), Message)
+      do_send(Dest, Node, Name, whereis(Name), Message)
   end.
 
 name_for_node(Node) ->
-  list_to_atom(lists:flatten(io_lib:format("~s_~s", [Node, teleporter]))).
+  list_to_atom(lists:flatten(io_lib:format("~s_~s", [Node, teleport]))).
 
 
 node_addressable(Node) ->
