@@ -25,7 +25,9 @@ gs_call(Process, Message, Timeout) ->
     _ ->
       Mref = erlang:monitor(process, Process),
       Name = name_for_node(Node),
-      do_send(Process, Name, whereis(Name), {'$gen_call', {self(), Mref}, Message}),
+      io:format("whereis ~p -- ~p~n", [Name, whereis(Name)]),
+      Res = do_send(Process, Name, whereis(Name), {'$gen_call', {self(), Mref}, Message}),
+      io:format("res ~p~n", [Res]),
       receive
         {Mref, Reply} ->
           erlang:demonitor(Mref, [flush]),
@@ -55,6 +57,10 @@ node_addressable(Node) ->
 
 do_send(Process, Name, undefined, Msg) ->
   case teleport_sup:add_node(get_node(Process)) of
+    {error, already_present} ->
+      supervisor:terminate_child(teleport_sup, get_node(Process)),
+      supervisor:delete_child(teleport_sup, get_node(Process)),
+      do_send(Process, Name, whereis(Name), Msg);
     {error, _} = Error ->
       Error;
     {ok, _} ->

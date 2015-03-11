@@ -46,6 +46,8 @@ handle_cast(_Msg, State) ->
   io:format("unhandled cast ~p~n", [_Msg]),
   {noreply, State}.
 
+%handle_info({tcp_closed, Socket}, State = #state{socket=Socket}) ->
+%  {stop, normal, State};
 handle_info(_Info, State) ->
   io:format("unhandled info ~p~n", [_Info]),
   {noreply, State}.
