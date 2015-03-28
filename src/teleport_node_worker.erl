@@ -17,7 +17,6 @@ init(Args) ->
   Node = proplists:get_value(node, Args),
   case splitnode(Node, longorshort()) of
     {ok, [_Name, Host]} ->
-      io:format("host ~p~n", [Host]),
       case inet:getaddr(Host, inet) of
         {ok, IP} ->
           case gen_server:call({teleport_listen_server, Node}, get_port) of
@@ -34,13 +33,14 @@ init(Args) ->
       {error, Reason}
   end.
 
+handle_call(get_socket, _From, State) ->
+  {reply, {ok, State#state.socket}, State};
 handle_call(Request, _From, State) ->
   io:format("unhandled call ~p~n", [Request]),
   {reply, ok, State}.
 
 handle_cast({send, Dest, Msg}, State) ->
   ok = gen_tcp:send(State#state.socket, term_to_binary({send, Dest, Msg})),
-  io:format("sent to ~p~n", [inet:peername(State#state.socket)]),
   {noreply, State};
 handle_cast(_Msg, State) ->
   io:format("unhandled cast ~p~n", [_Msg]),

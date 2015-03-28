@@ -10,7 +10,7 @@ start_link(Node) ->
 
 init([Node]) ->
   Name = teleport:name_for_node(Node),
-  PoolArgs = [{name, {local, Name}}, {size, 1}, {max_overflow, 5}, {worker_module, teleport_node_worker}],
+  PoolArgs = [{name, {local, Name}}, {size, 6}, {max_overflow, 5}, {worker_module, teleport_node_worker}],
   WorkerArgs = [{node, Node}],
   {ok, {{rest_for_one, 10, 10}, [
                                  {teleport_node_watcher, {teleport_node_watcher, start_link, [Node]},
