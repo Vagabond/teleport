@@ -1,6 +1,5 @@
 -module(teleport_node_worker).
 -behaviour(gen_server).
--behaviour(poolboy_worker).
 
 -export([start_link/1]).
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2,
@@ -13,8 +12,9 @@
 start_link(Args) ->
   gen_server:start_link(?MODULE, Args, []).
 
-init(Args) ->
-  Node = proplists:get_value(node, Args),
+init([RegName]) ->
+  Node = get_nodename(list_to_binary(atom_to_list(RegName))),
+  io:format("node is ~p~n", [Node]),
   case splitnode(Node, longorshort()) of
     {ok, [_Name, Host]} ->
       case inet:getaddr(Host, inet) of
@@ -40,7 +40,7 @@ handle_call(Request, _From, State) ->
   {reply, ok, State}.
 
 handle_cast({send, Dest, Msg}, State) ->
-  ok = gen_tcp:send(State#state.socket, term_to_binary({send, Dest, Msg})),
+  ok = gen_tcp:send(State#state.socket, teleport:term_to_iolist({send, Dest, Msg})),
   {noreply, State};
 handle_cast(_Msg, State) ->
   io:format("unhandled cast ~p~n", [_Msg]),
@@ -59,6 +59,10 @@ code_change(_OldVsn, State, _Extra) ->
   {ok, State}.
 
 %% internal
+
+get_nodename(<<"teleport_", Node/binary>>) ->
+  list_to_atom(binary_to_list(Node)).
+
 longorshort() ->
   case split_node(atom_to_list(node()), $@, []) of
     [nonode, nohost] ->

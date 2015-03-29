@@ -42,8 +42,7 @@ gs_call(Process, Message, Timeout) ->
 
 
 name_for_node(Node) ->
-  list_to_atom(lists:flatten(io_lib:format("~s_~s", [Node, teleport]))).
-
+  list_to_atom(lists:flatten(io_lib:format("~s_~s", [teleport, Node]))).
 
 node_addressable(Node) ->
   case lists:member(Node, nodes()) of
@@ -54,24 +53,16 @@ node_addressable(Node) ->
   end.
 
 do_send(Process, Name, undefined, Msg) ->
-  case teleport_sup:add_node(get_node(Process)) of
-    {error, already_present} ->
-      supervisor:terminate_child(teleport_sup, get_node(Process)),
-      supervisor:delete_child(teleport_sup, get_node(Process)),
+  case sidejob:new_resource(Name, teleport_node_worker, 10) of
+    {error, {already_running, _}} ->
       do_send(Process, Name, whereis(Name), Msg);
     {error, _} = Error ->
       Error;
     {ok, _} ->
       do_send(Process, Name, whereis(Name), Msg)
   end;
-do_send(Process, _Name, Pid, Message) ->
-  Worker = poolboy:checkout(Pid),
-  {ok, Socket} = gen_server:call(Worker, get_socket),
-  ok = prim_inet:send(Socket, term_to_iolist({send, get_dest(Process), Message})),
-  %ok = prim_inet:send(Socket, term_to_binary({send, get_dest(Process), Message})),
-	%{ok, FD} = inet:getfd(Socket),
-	%erlang:send_term(FD, {send, get_dest(Process), Message}),
-  ok = poolboy:checkin(Pid, Worker),
+do_send(Process, Name, _Pid, Message) ->
+  sidejob:cast(Name, {send, get_dest(Process), Message}),
   ok.
 
 get_node({Name, Node}) when is_atom(Name), is_atom(Node) ->

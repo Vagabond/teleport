@@ -7,7 +7,7 @@
                   kernel,
                   stdlib,
                   crypto,
-                  poolboy
+                  sidejob
                  ]},
   {mod, { teleport_app, []}},
   {modules, []},
