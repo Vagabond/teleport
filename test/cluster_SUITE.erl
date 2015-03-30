@@ -10,7 +10,8 @@
         ]).
 
 -export([
-         blah/1
+         perf/1,
+         reconnect/1
         ]).
 
 -include_lib("eunit/include/eunit.hrl").
@@ -44,23 +45,53 @@ end_per_testcase(_, _Config) ->
     ok.
 
 all() ->
-    [blah].
+    [perf, reconnect].
 
-blah(Config) ->
+perf(Config) ->
     Nodes = proplists:get_value(nodes, Config),
+    test_utils:pmap(fun(Node) ->
+                        gen_server:call({send_server, Node}, prime, infinity)
+                    end, Nodes),
     Res = test_utils:pmap(fun(Node) ->
                             timer:tc(fun() ->
                                              gen_server:call({send_server, Node}, go, infinity)
                                      end)
                           end, Nodes),
-    ct:pal("result ~p~n", [Res]),
+    ct:pal("disterl result ~p~n", [Res]),
     {Time, _} = lists:unzip(Res),
-    ct:pal("avg ~p~n", [(lists:sum(Time)/length(Nodes))/1000000]),
+    ct:pal("disterl avg ~p~n", [(lists:sum(Time)/length(Nodes))/1000000]),
+    test_utils:pmap(fun(Node) ->
+                        gen_server:call({send_server, Node}, {set_send_method, teleport}, infinity),
+                        gen_server:call({send_server, Node}, prime, infinity)
+                    end, Nodes),
+    Res2 = test_utils:pmap(fun(Node) ->
+                            timer:tc(fun() ->
+                                             gen_server:call({send_server, Node}, go, infinity)
+                                     end)
+                          end, Nodes),
+    ct:pal("teleport result ~p~n", [Res2]),
+    {Time2, _} = lists:unzip(Res2),
+    ct:pal("teleport avg ~p~n", [(lists:sum(Time2)/length(Nodes))/1000000]),
+
     ok.
 
+reconnect(Config) ->
+    Nodes = proplists:get_value(nodes, Config),
+    test_utils:pmap(fun(Node) ->
+                        gen_server:call({send_server, Node}, {set_send_method, teleport}, infinity),
+                        gen_server:call({send_server, Node}, prime, infinity)
+                    end, Nodes),
+    ct_slave:stop(jaguar),
+    test_utils:start_node(jaguar, Config, reconnect),
+    start_server(Nodes, 0),
+    test_utils:pmap(fun(Node) ->
+                        gen_server:call({send_server, Node}, go, infinity)
+                    end, Nodes),
+    ok.
 
 start_server(Nodes, I) ->
     {End, [N|Start]} = lists:split(I, Nodes),
+    ct:pal("Node is ~p~n", [N]),
     %%NL = lists:sort(fun(_A, _B) -> crypto:rand_bytes(1) > crypto:rand_bytes(1) end, Start ++ End),
     NL = case I rem 2 == 0 of
              true ->

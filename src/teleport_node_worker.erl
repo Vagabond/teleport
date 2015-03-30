@@ -6,7 +6,8 @@
          code_change/3]).
 
 -record(state, {
-          socket :: gen_tcp:socket()
+          socket :: gen_tcp:socket(),
+          node :: atom()
          }).
 
 start_link(Args) ->
@@ -15,23 +16,7 @@ start_link(Args) ->
 init([RegName]) ->
   Node = get_nodename(list_to_binary(atom_to_list(RegName))),
   io:format("node is ~p~n", [Node]),
-  case splitnode(Node, longorshort()) of
-    {ok, [_Name, Host]} ->
-      case inet:getaddr(Host, inet) of
-        {ok, IP} ->
-          case gen_server:call({teleport_listen_server, Node}, get_port) of
-            {ok, Port} ->
-              {ok, Socket} = gen_tcp:connect(IP, Port, [binary, {packet, 4}, {active, once}]),
-              {ok, #state{socket=Socket}};
-            {error, Reason} ->
-              {error, Reason}
-          end;
-        {error, Reason} ->
-          {error, Reason}
-      end;
-    {error, Reason} ->
-      {error, Reason}
-  end.
+  connect(Node).
 
 handle_call(get_socket, _From, State) ->
   {reply, {ok, State#state.socket}, State};
@@ -40,14 +25,25 @@ handle_call(Request, _From, State) ->
   {reply, ok, State}.
 
 handle_cast({send, Dest, Msg}, State) ->
-  ok = gen_tcp:send(State#state.socket, teleport:term_to_iolist({send, Dest, Msg})),
-  {noreply, State};
+  case gen_tcp:send(State#state.socket, teleport:term_to_iolist({send, Dest, Msg})) of
+    ok ->
+      {noreply, State};
+    {error, _} ->
+      gen_tcp:close(State#state.socket),
+      case connect(State#state.node) of
+        {ok, NewState} ->
+          gen_tcp:send(NewState#state.socket, teleport:term_to_iolist({send, Dest, Msg})),
+          {noreply, NewState};
+        {error, _} ->
+          {noreply, State}
+      end
+  end;
 handle_cast(_Msg, State) ->
   io:format("unhandled cast ~p~n", [_Msg]),
   {noreply, State}.
 
 %handle_info({tcp_closed, Socket}, State = #state{socket=Socket}) ->
-%  {stop, normal, State};
+  %{stop, normal, State};
 handle_info(_Info, State) ->
   io:format("unhandled info ~p~n", [_Info]),
   {noreply, State}.
@@ -102,3 +98,21 @@ split_node([Chr|T], Chr, Ack) -> [lists:reverse(Ack)|split_node(T, Chr, [])];
 split_node([H|T], Chr, Ack)   -> split_node(T, Chr, [H|Ack]);
 split_node([], _, Ack)        -> [lists:reverse(Ack)].
 
+connect(Node) ->
+  case splitnode(Node, longorshort()) of
+    {ok, [_Name, Host]} ->
+      case inet:getaddr(Host, inet) of
+        {ok, IP} ->
+          case gen_server:call({teleport_listen_server, Node}, get_port) of
+            {ok, Port} ->
+              {ok, Socket} = gen_tcp:connect(IP, Port, [binary, {packet, 4}, {active, once}]),
+              {ok, #state{socket=Socket, node=Node}};
+            {error, Reason} ->
+              {error, Reason}
+          end;
+        {error, Reason} ->
+          {error, Reason}
+      end;
+    {error, Reason} ->
+      {error, Reason}
+  end.
