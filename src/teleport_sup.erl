@@ -13,6 +13,13 @@ add_node(Node) ->
                                       transient, 5000, worker, [teleport_node_sup]}).
 
 init([]) ->
+  _ = try ets:new(teleport_workers, [named_table, public, set, {keypos, 1}, {read_concurrency, true}]) of
+        _Result ->
+          ok
+      catch
+        error:badarg ->
+          ok
+      end,
   {ok, {{one_for_one, 10, 10}, [
                                 {teleport_listen_server,
                                  {teleport_listen_server, start_link, []},

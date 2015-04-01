@@ -36,7 +36,7 @@ init_per_testcase(Case, Config) ->
     Nodes = test_utils:pmap(fun(N) ->
                                     test_utils:start_node(N, Config, Case)
                             end, ?NODES),
-    [start_server(Nodes, N-1) || N <- lists:seq(1, length(Nodes))],
+    [start_server(Nodes, N-1, 0) || N <- lists:seq(1, length(Nodes))],
     {ok, _} = ct_cover:add_nodes(Nodes),
     [{nodes, Nodes}|Config].
 
@@ -45,60 +45,78 @@ end_per_testcase(_, _Config) ->
     ok.
 
 all() ->
-    [perf, reconnect].
+    [perf].%%, reconnect].
+  %[reconnect].
 
 perf(Config) ->
     Nodes = proplists:get_value(nodes, Config),
-    test_utils:pmap(fun(Node) ->
-                        gen_server:call({send_server, Node}, prime, infinity)
-                    end, Nodes),
-    Res = test_utils:pmap(fun(Node) ->
+    [[start_server(Nodes, N-1, I) || N <- lists:seq(1, length(Nodes))] || I <- lists:seq(1, 5)],
+    Prod = [{X, Y} || X <- Nodes, Y <- lists:seq(0, 5)],
+    test_utils:pmap(fun({Node, N}) ->
+                        gen_server:call({make_name(N), Node}, prime, infinity)
+                    end, Prod),
+    Res = test_utils:pmap(fun({Node, N}) ->
                             timer:tc(fun() ->
-                                             gen_server:call({send_server, Node}, go, infinity)
+                                         gen_server:call({make_name(N), Node}, go, infinity)
                                      end)
-                          end, Nodes),
+                          end, Prod),
     ct:pal("disterl result ~p~n", [Res]),
     {Time, _} = lists:unzip(Res),
-    ct:pal("disterl avg ~p~n", [(lists:sum(Time)/length(Nodes))/1000000]),
-    test_utils:pmap(fun(Node) ->
-                        gen_server:call({send_server, Node}, {set_send_method, teleport}, infinity),
-                        gen_server:call({send_server, Node}, prime, infinity)
-                    end, Nodes),
-    Res2 = test_utils:pmap(fun(Node) ->
+    ct:pal("disterl avg ~p~n", [(lists:sum(Time)/length(Prod))/1000000]),
+    test_utils:pmap(fun({Node, N}) ->
+                        %ct:pal("confugiring and priming ~p~p~n", [Node, N]),
+                        ok = gen_server:call({make_name(N), Node}, {set_send_method, teleport}, infinity),
+                        %ct:pal("configured ~p~p~n", [Node, N]),
+                        done = gen_server:call({make_name(N), Node}, prime, infinity),
+                        ok
+                    end, Prod),
+    Res2 = test_utils:pmap(fun({Node, N}) ->
                             timer:tc(fun() ->
-                                             gen_server:call({send_server, Node}, go, infinity)
+                                             case catch(gen_server:call({make_name(N), Node}, go, infinity)) of
+                                               {'EXIT', _} ->
+                                                 ct:pal("~p~n", [erlang:process_info(self(), [messages])]);
+                                               _ ->
+                                                 ok
+                                             end
                                      end)
-                          end, Nodes),
+                          end, Prod),
     ct:pal("teleport result ~p~n", [Res2]),
     {Time2, _} = lists:unzip(Res2),
-    ct:pal("teleport avg ~p~n", [(lists:sum(Time2)/length(Nodes))/1000000]),
+    ct:pal("teleport avg ~p~n", [(lists:sum(Time2)/length(Prod))/1000000]),
 
     ok.
 
 reconnect(Config) ->
-    Nodes = proplists:get_value(nodes, Config),
+    [FirstNode|_] = Nodes = proplists:get_value(nodes, Config),
     test_utils:pmap(fun(Node) ->
-                        gen_server:call({send_server, Node}, {set_send_method, teleport}, infinity),
-                        gen_server:call({send_server, Node}, prime, infinity)
+                        gen_server:call({make_name(0), Node}, {set_send_method, teleport}, infinity),
+                        gen_server:call({make_name(0), Node}, prime, infinity)
                     end, Nodes),
+    ct:pal("ready\n"),
     ct_slave:stop(jaguar),
     test_utils:start_node(jaguar, Config, reconnect),
-    start_server(Nodes, 0),
+    start_server(Nodes, 0, 0),
+    gen_server:call({make_name(0), FirstNode}, {set_send_method, teleport}, infinity),
+    gen_server:call({make_name(0), FirstNode}, prime, infinity),
+    ct:pal("ready\n"),
     test_utils:pmap(fun(Node) ->
-                        gen_server:call({send_server, Node}, go, infinity)
+                        gen_server:call({make_name(0), Node}, go, infinity)
                     end, Nodes),
     ok.
 
-start_server(Nodes, I) ->
+start_server(Nodes, I, Number) ->
     {End, [N|Start]} = lists:split(I, Nodes),
-    ct:pal("Node is ~p~n", [N]),
     %%NL = lists:sort(fun(_A, _B) -> crypto:rand_bytes(1) > crypto:rand_bytes(1) end, Start ++ End),
     NL = case I rem 2 == 0 of
              true ->
                  Start++End;
              false ->
                  lists:reverse(Start++End)
+                 %Start++End
          end,
-    {ok, _Pid} = rpc:call(N, send_server, start, [NL]),
-    %%link(Pid).
+    {ok, _Pid} = rpc:call(N, send_server, start, [Number, NL]),
+    %link(_Pid),
     ok.
+
+make_name(I) ->
+  list_to_atom("send_server_" ++integer_to_list(I)).

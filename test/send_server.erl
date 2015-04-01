@@ -2,7 +2,7 @@
 -behaviour(gen_server).
 
 %% API
--export([start/1, start_link/1, go/0, prime/0, set_send_method/1]).
+-export([start/2, start_link/2, go/1, prime/1, set_send_method/2]).
 
 %% gen_server callbacks
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2,
@@ -11,38 +11,39 @@
 -record(state, {
           nodes = [],
           payload,
-          send=disterl
+          send=disterl,
+          i=0
          }).
 
-start(Nodes) ->
-  gen_server:start({local, ?MODULE}, ?MODULE, [Nodes], []).
+start(I, Nodes) ->
+  gen_server:start({local, make_name(I)}, ?MODULE, [I, Nodes], []).
 
-start_link(Nodes) ->
-  gen_server:start_link({local, ?MODULE}, ?MODULE, [Nodes], []).
+start_link(I, Nodes) ->
+  gen_server:start_link({local, make_name(I)}, ?MODULE, [I, Nodes], []).
 
-go() ->
-  gen_server:call(?MODULE, go).
+go(I) ->
+  gen_server:call(make_name(I), go).
 
-prime() ->
-  gen_server:call(?MODULE, prime).
+prime(I) ->
+  gen_server:call(make_name(I), prime).
 
-set_send_method(disterl) ->
-  gen_server:call(?MODULE, {set_send_method, disterl});
-set_send_method(teleport) ->
-  gen_server:call(?MODULE, {set_send_method, teleport}).
+set_send_method(I, disterl) ->
+  gen_server:call(make_name(I), {set_send_method, disterl});
+set_send_method(I, teleport) ->
+  gen_server:call(make_name(I), {set_send_method, teleport}).
 
-init([Nodes]) ->
-  {ok, #state{nodes=Nodes, payload=crypto:rand_bytes(1024)}}.
+init([I, Nodes]) ->
+  {ok, #state{nodes=Nodes, i=I, payload=crypto:rand_bytes(10*1024*1024)}}.
 
 handle_call({set_send_method, Send}, _From, State) ->
   {reply, ok, State#state{send=Send}};
 handle_call(prime, From, State=#state{nodes=Nodes, send=Send}) ->
     [N|Rest] = Nodes,
-    send(Send, {?MODULE, N}, {relay, Rest, From, prime}),
+    send(Send, {make_name(State#state.i), N}, {relay, Rest, From, prime}),
     {noreply, State};
-handle_call(go, From, State=#state{nodes=Nodes, payload=P, send=Send}) ->
+handle_call(go, {Pid,_}=From, State=#state{nodes=Nodes, payload=P, send=Send}) ->
     [N|Rest] = Nodes,
-    send(Send, {?MODULE, N}, {relay, Rest++Nodes++Nodes++Nodes++Nodes, From, P}),
+    send(Send, {make_name(State#state.i), N}, {relay, Rest, From, P}),
     {noreply, State};
 handle_call(_Msg, _From, State) ->
   io:format("unhandled call ~p~n", [_Msg]),
@@ -52,7 +53,7 @@ handle_cast({relay, [], From, _}, State) ->
     gen_server:reply(From, done),
     {noreply, State};
 handle_cast({relay, [N|Rest], From, P}, State) ->
-    gen_server:cast({?MODULE, N}, {relay, Rest, From, P}),
+    gen_server:cast({make_name(State#state.i), N}, {relay, Rest, From, P}),
     {noreply, State};
 handle_cast(_Msg, State) ->
   io:format("unhandled cast ~p~n", [_Msg]),
@@ -61,8 +62,8 @@ handle_cast(_Msg, State) ->
 handle_info({relay, [], From, _}, State) ->
     gen_server:reply(From, done),
     {noreply, State};
-handle_info({relay, [N|Rest], From, P}, State=#state{send=Send}) ->
-    send(Send, {?MODULE, N}, {relay, Rest, From, P}),
+handle_info({relay, [N|Rest], {Pid, _} = From, P}, State=#state{send=Send}) ->
+    send(Send, {make_name(State#state.i), N}, {relay, Rest, From, P}),
     {noreply, State};
 handle_info(_Msg, State) ->
   io:format("unhandled info ~p~n", [_Msg]),
@@ -78,3 +79,6 @@ send(disterl, Dest, Msg) ->
   Dest ! Msg;
 send(teleport, Dest, Msg) ->
   teleport:send(Dest, Msg).
+
+make_name(I) ->
+  list_to_atom(atom_to_list(?MODULE) ++"_" ++integer_to_list(I)).

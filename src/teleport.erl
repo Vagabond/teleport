@@ -14,7 +14,7 @@ send(Process, Message) ->
       {error, nodedown};
     _ ->
       Name = name_for_node(Node),
-      do_send(Process, Name, whereis(Name), Message)
+      do_send(Process, Name, has_worker(Name), Message)
   end.
 
 gs_call(Process, Message, Timeout) ->
@@ -25,7 +25,7 @@ gs_call(Process, Message, Timeout) ->
     _ ->
       Mref = erlang:monitor(process, Process),
       Name = name_for_node(Node),
-      _Res = do_send(Process, Name, whereis(Name), {'$gen_call', {self(), Mref}, Message}),
+      _Res = do_send(Process, Name, has_worker(Name), {'$gen_call', {self(), Mref}, Message}),
       receive
         {Mref, Reply} ->
           erlang:demonitor(Mref, [flush]),
@@ -53,17 +53,19 @@ node_addressable(Node) ->
   end.
 
 do_send(Process, Name, undefined, Msg) ->
-  case sidejob:new_resource(Name, teleport_node_worker, 10) of
-    {error, {already_running, _}} ->
-      do_send(Process, Name, whereis(Name), Msg);
+  case sidejob:new_resource(Name, teleport_node_worker, 1000) of
+    {error, {already_running, _Arg}} ->
+      do_send(Process, Name, has_worker(Name), Msg);
+    {error, {already_started,_Arg}} ->
+      do_send(Process, Name, has_worker(Name), Msg);
     {error, _} = Error ->
       Error;
-    {ok, _} ->
-      do_send(Process, Name, whereis(Name), Msg)
+    {ok, Pid} ->
+      ets:insert(teleport_workers, {Name, Pid}),
+      do_send(Process, Name, Pid, Msg)
   end;
 do_send(Process, Name, _Pid, Message) ->
-  sidejob:cast(Name, {send, get_dest(Process), Message}),
-  ok.
+  sidejob:unbounded_cast(Name, {send, get_dest(Process), Message}).
 
 get_node({Name, Node}) when is_atom(Name), is_atom(Node) ->
   Node;
@@ -120,3 +122,8 @@ term_to_iolist_(T) ->
   <<131, Rest/binary>> = term_to_binary(T),
   Rest.
 
+has_worker(Name) ->
+  case ets:lookup(teleport_workers, Name) of
+    [] -> undefined;
+    [{Name, Pid}] -> Pid
+  end.
