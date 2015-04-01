@@ -41,7 +41,7 @@ handle_call(prime, From, State=#state{nodes=Nodes, send=Send}) ->
     [N|Rest] = Nodes,
     send(Send, {make_name(State#state.i), N}, {relay, Rest, From, prime}),
     {noreply, State};
-handle_call(go, {Pid,_}=From, State=#state{nodes=Nodes, payload=P, send=Send}) ->
+handle_call(go, From, State=#state{nodes=Nodes, payload=P, send=Send}) ->
     [N|Rest] = Nodes,
     send(Send, {make_name(State#state.i), N}, {relay, Rest, From, P}),
     {noreply, State};
@@ -62,7 +62,7 @@ handle_cast(_Msg, State) ->
 handle_info({relay, [], From, _}, State) ->
     gen_server:reply(From, done),
     {noreply, State};
-handle_info({relay, [N|Rest], {Pid, _} = From, P}, State=#state{send=Send}) ->
+handle_info({relay, [N|Rest], From, P}, State=#state{send=Send}) ->
     send(Send, {make_name(State#state.i), N}, {relay, Rest, From, P}),
     {noreply, State};
 handle_info(_Msg, State) ->

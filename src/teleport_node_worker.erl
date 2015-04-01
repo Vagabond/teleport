@@ -15,7 +15,6 @@ start_link(Args) ->
 
 init([RegName]) ->
   Node = get_nodename(list_to_binary(atom_to_list(RegName))),
-  io:format("node is ~p~n", [Node]),
   connect(Node).
 
 handle_call(get_socket, _From, State) ->
