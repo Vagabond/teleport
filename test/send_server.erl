@@ -33,7 +33,7 @@ set_send_method(I, teleport) ->
   gen_server:call(make_name(I), {set_send_method, teleport}).
 
 init([I, Nodes]) ->
-  {ok, #state{nodes=Nodes, i=I, payload=crypto:rand_bytes(10*1024*1024)}}.
+  {ok, #state{nodes=Nodes, i=I, payload=crypto:strong_rand_bytes(10*1024*1024)}}.
 
 handle_call({set_send_method, Send}, _From, State) ->
   {reply, ok, State#state{send=Send}};

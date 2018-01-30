@@ -1,0 +1,4 @@
+[{<<"sidejob">>,
+  {git,"git://github.com/basho/sidejob.git",
+       {ref,"9cd6bf566e8a0b04b24419c51117a8b9296a9c6a"}},
+  0}].
